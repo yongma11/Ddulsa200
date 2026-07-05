@@ -107,24 +107,23 @@ def get_now_kst():
 # ============================================================================
 @st.cache_data(ttl=600)
 def get_data_final(period='max'):
-    """QQQ / SOXL 종가(split 반영, dividend 미반영) + SOXL 배당 컬럼."""
+    """QQQ / SOXL 조정종가(auto_adjust=True → split + dividend 모두 반영).
+    배당이 가격에 이미 녹아 있으므로 별도 배당 재투자는 하지 않는다(이중계산 방지)."""
     for attempt in range(3):
         try:
             start_date   = '2005-01-01'
             end_date_str = (get_now_kst() + timedelta(days=1)).strftime('%Y-%m-%d')
+            # ★ auto_adjust=True → 'Close' = 조정종가(분할+배당 반영)
             df_qqq  = yf.download("QQQ",  start=start_date, end=end_date_str,
-                                  progress=False, auto_adjust=False, actions=True)
+                                  progress=False, auto_adjust=True, actions=True)
             df_soxl = yf.download("SOXL", start=start_date, end=end_date_str,
-                                  progress=False, auto_adjust=False, actions=True)
+                                  progress=False, auto_adjust=True, actions=True)
             if df_qqq.empty or df_soxl.empty:
                 time.sleep(1); continue
             qqq_close  = df_qqq['Close']['QQQ']   if isinstance(df_qqq.columns,  pd.MultiIndex) else df_qqq['Close']
             soxl_close = df_soxl['Close']['SOXL'] if isinstance(df_soxl.columns, pd.MultiIndex) else df_soxl['Close']
-            try:
-                soxl_div = df_soxl['Dividends']['SOXL'] if isinstance(df_soxl.columns, pd.MultiIndex) else df_soxl['Dividends']
-                soxl_div = soxl_div.fillna(0).astype(float)
-            except (KeyError, AttributeError):
-                soxl_div = pd.Series(0.0, index=soxl_close.index)
+            # 조정종가에 배당이 이미 포함 → 별도 배당 컬럼은 0으로 두어 재투자 로직을 비활성화
+            soxl_div = pd.Series(0.0, index=soxl_close.index)
             df = pd.DataFrame({'QQQ': qqq_close, 'SOXL': soxl_close, 'SOXL_Div': soxl_div})
             df['SOXL_Div'] = df['SOXL_Div'].fillna(0)
             df = df.sort_index().dropna(subset=['QQQ', 'SOXL'])
@@ -875,7 +874,7 @@ def main():
             m2.metric("💰 누적 수익금", f"${tot_prof:,.2f}")
             m3.metric("📈 총 수익률", f"{tot_prof/saved_init_cap*100:.1f}%")
             m4.metric("💸 누적 인출", f"${curr_cum_wd:,.0f}")
-            m5.metric("💰 누적 배당", f"${curr_cum_div:,.2f}")
+            m5.metric("📊 가격 기준", "조정종가", help="분할+배당 반영(Adj Close). 배당 별도 재투자 안 함")
         else:
             st.info("아직 실현된 수익이 없습니다.")
         with st.expander(f"📜 전략 시작일({saved_start_date}) 이후 상세 매매 기록", expanded=False):
@@ -978,10 +977,7 @@ def main():
                         m4.metric("Calmar", f"{calmar:.2f}")
                         m5.metric("Sortino", f"{metrics['sortino']:.2f}")
                         m6.metric("Profit Factor", f"{metrics['profit_factor']:.2f}")
-                        st.markdown("#### 💰 부수 효과")
-                        dc1, dc2 = st.columns(2)
-                        dc1.metric("누적 배당 (재투자)", f"${metrics.get('total_dividends', 0):,.0f}")
-                        dc2.metric("배당 비중", f"{(metrics.get('total_dividends',0)/final*100):.2f}%" if final > 0 else "─")
+                        st.caption("ℹ️ 가격은 **조정종가**(분할+배당 반영)를 사용합니다. 배당은 가격에 이미 포함되어 별도로 재투자하지 않습니다.")
                         if metrics.get('include_fees') or metrics.get('include_tax'):
                             slabel = {'A': 'A: 5월 일괄인출', 'B': '🎨 B: 커스텀'}.get(metrics.get('tax_strategy', 'A'), 'A')
                             st.markdown("#### 💰 수수료 & 양도세 (시뮬)" + (f" — 인출 전략: **{slabel}**" if metrics.get('include_tax') else ""))
@@ -1065,6 +1061,7 @@ def main():
         - **{RESET_CYCLE}거래일**마다 운용원금(op_base) 재산정 → 1티어 크기 = op_base ÷ 분할수.
         - 사이클 실현손익이 **+면 {int(UP_RATE*100)}%만 원금에 재투자**(나머지는 예비비), **−면 {int(DN_RATE*100)}%만 원금에서 차감**(하락 시 사이징 급감 방지).
         - 자산 마킹은 매일 **현금 + 보유평가액**(증권사 기준 정확 마킹).
+        - **가격 데이터: 조정종가(Adj Close, 분할+배당 반영)** 사용. 배당은 가격에 이미 포함되므로 별도 현금 재투자는 하지 않습니다.
         """)
         st.markdown("---")
         st.subheader("2. 설계 근거 (요약)")
