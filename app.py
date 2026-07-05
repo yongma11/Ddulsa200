@@ -70,8 +70,8 @@ LOCAL_PARAMS = {
 BASE_SPLITS = {'Offense': 6, 'Safe': 4}   # 균등 분할 수 (1티어 = 원금/분할수)
 MAX_SLOTS   = {'Offense': 7, 'Safe': 5}   # 예비티어 포함 최대 동시 보유
 RESET_CYCLE = 12                          # 비대칭 복리 재산정 주기(거래일)
-UP_RATE     = 0.80                        # 상승 복리율 (이익의 80% 재투자)
-DN_RATE     = 0.30                        # 하락 복리율 (손실의 30%만 반영)
+UP_RATE     = 0.70                        # 상승 복리율 (이익의 70% 재투자) — 낙폭 완화 기본값
+DN_RATE     = 0.50                        # 하락 복리율 (손실의 50% 반영, ↑일수록 하락 시 사이즈 축소→낙폭↓)
 QREG_SMA_WINDOW = 200                     # 레짐 판단 이동평균(일)
 
 def base_splits_for(mode): return BASE_SPLITS.get(mode, 4)
@@ -453,7 +453,10 @@ def run_backtest_fixed(df, start_date, end_date, init_cap,
                        include_fees=False, include_tax=False,
                        buy_fee_rate=0.00015, sell_fee_rate=0.0001706,
                        tax_deduction_usd=1786.0, tax_rate=0.22,
-                       tax_strategy='A', custom_schedule=None):
+                       tax_strategy='A', custom_schedule=None,
+                       up_rate=None, dn_rate=None):
+    if up_rate is None: up_rate = UP_RATE
+    if dn_rate is None: dn_rate = DN_RATE
     TAX_SCHEDULES = {'A': [(1.00, (5, 1), (5, 31))]}
     if tax_strategy == 'B' and custom_schedule:
         tax_tranches_def = custom_schedule
@@ -581,7 +584,7 @@ def run_backtest_fixed(df, start_date, end_date, init_cap,
         cycle_days += 1
         if cycle_days >= RESET_CYCLE:
             cyc = cum_net - last_cycle
-            op_base += (UP_RATE * cyc) if cyc >= 0 else (DN_RATE * cyc)
+            op_base += (up_rate * cyc) if cyc >= 0 else (dn_rate * cyc)
             last_cycle = cum_net
             op_base = max(op_base, 1000.0)
             slot_sizes['Offense'] = op_base / base_splits_for('Offense')
@@ -946,12 +949,21 @@ def main():
                                         f"({len(selected_months)}개 × {frac_each*100:.1f}%)")
                     else:
                         ded_usd, krw_rate, tax_strategy, custom_schedule = 1786.0, 1400, 'A', None
+            with st.expander("⚙️ 비대칭 복리율 조정 (수익 ↔ 낙폭 다이얼)", expanded=False):
+                cc1, cc2 = st.columns(2)
+                up_rate = cc1.slider("상승 복리율 (UP)", 0.50, 1.00, float(UP_RATE), 0.05,
+                                     help="사이클 이익의 몇 %를 운용원금에 재투자할지")
+                dn_rate = cc2.slider("하락 복리율 (DN)", 0.10, 1.00, float(DN_RATE), 0.05,
+                                     help="사이클 손실의 몇 %를 원금에서 차감할지. 높일수록 하락 시 티어 크기가 빨리 줄어 낙폭↓ / 수익↓")
+                st.caption(f"기본값 UP {UP_RATE} / DN {DN_RATE} (낙폭 완화). "
+                           "수익 극대화는 UP 0.80 / DN 0.30, 방어 강화는 DN 0.70 근처를 시도해보세요.")
             if st.button("🚀 분석 실행"):
                 with st.spinner("분석 중..."):
                     res, metrics, df_yearly, df_debug = run_backtest_fixed(
                         df, start_d, end_d, bt_init_cap, include_fees=inc_fees, include_tax=inc_tax,
                         tax_deduction_usd=ded_usd, tax_rate=0.22, tax_strategy=tax_strategy,
-                        custom_schedule=custom_schedule if inc_tax else None)
+                        custom_schedule=custom_schedule if inc_tax else None,
+                        up_rate=up_rate, dn_rate=dn_rate)
                     if res is not None:
                         final = res['Equity'].iloc[-1]; ret = final / bt_init_cap - 1
                         days = (res.index[-1] - res.index[0]).days
