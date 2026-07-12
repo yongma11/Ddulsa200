@@ -168,6 +168,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
+def H(html: str) -> str:
+    """HTML 문자열의 줄별 들여쓰기를 제거한다.
+    Streamlit의 마크다운 파서는 4칸 이상 들여쓴 줄을 '코드블록'으로 해석하므로,
+    f-string 안에서 예쁘게 들여쓴 HTML이 그대로 <pre><code>로 렌더링되는 사고가 난다.
+    HTML은 줄 앞 공백을 무시하므로 전부 떼어내면 안전하다."""
+    return "\n".join(line.strip() for line in html.strip().splitlines())
+
+
 # ============================================================================
 #  전략 파라미터
 #  ※ 내부 키는 'Offense'/'Safe' 유지 (기존 CSV·로그·birth_mode 호환).
@@ -763,17 +771,17 @@ def bridge_banner(mode, dist, expo=None):
     def bar(meta, active):
         pct = min(meta['expo_p95'], 100)
         col = meta['color'] if active else "var(--line-2)"
-        return f"""
-        <div class="gauge-row">
-          <span class="gauge-lab" style="color:{meta['color'] if active else 'var(--mist)'}">
-            {meta['icon']} {meta['ko']}</span>
-          <span class="gauge-track">
-            <span class="gauge-fill" style="width:{pct}%;background:{col};
-                  opacity:{'1' if active else '.35'}"></span></span>
-          <span class="gauge-val">평균 {meta['expo_mean']:.0f}% · p95 {meta['expo_p95']:.0f}%</span>
-        </div>"""
+        lab = meta['color'] if active else "var(--mist)"
+        op  = "1" if active else ".35"
+        return (f'<div class="gauge-row">'
+                f'<span class="gauge-lab" style="color:{lab}">{meta["icon"]} {meta["ko"]}</span>'
+                f'<span class="gauge-track">'
+                f'<span class="gauge-fill" style="width:{pct}%;background:{col};opacity:{op}"></span>'
+                f'</span>'
+                f'<span class="gauge-val">평균 {meta["expo_mean"]:.0f}% · p95 {meta["expo_p95"]:.0f}%</span>'
+                f'</div>')
 
-    st.markdown(f"""
+    st.markdown(H(f"""
     <div class="bridge {m['css']}">
       <div class="bridge-top">
         <span class="bridge-name">{m['icon']} {m['ko']} 모드</span>
@@ -797,26 +805,29 @@ def bridge_banner(mode, dist, expo=None):
         </div>
       </div>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 
 def dial(k, v, d=""):
-    return f"""<div class="dial"><div class="k">{k}</div><div class="v">{v}</div>
-               <div class="d">{d}</div></div>"""
+    return H(f"""<div class="dial">
+    <div class="k">{k}</div>
+    <div class="v">{v}</div>
+    <div class="d">{d}</div>
+    </div>""")
 
 
 # ============================================================================
 #  MAIN
 # ============================================================================
 def main():
-    st.markdown("""
+    st.markdown(H("""
     <div class="mast">
       <div class="eyebrow">Ddulsa 200 · Navigation Console · v2.0</div>
       <h1>떨사 200</h1>
       <div class="sub">QQQ 200일선으로 계절을 읽고 · SOXL 급락을 분할로 담는다 —
         <span class="num">순항(Cruise)</span> / <span class="num">구조(Rescue)</span></div>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
     tab_t, tab_b, tab_l = st.tabs(["🛥️  실전 트레이딩", "🧪  백테스트", "📚  전략 로직"])
 
@@ -912,11 +923,11 @@ def main():
                         f"<b class='num'>${lim:.2f}</b> 이하 "
                         f"<span style='color:var(--mist)'>{mko(curr_mode)} 진입 · LOC</span>")
             for o in sells:
-                st.markdown(f'<div class="order sell"><span class="tag sell">청산</span>'
-                            f'<span>{o}</span></div>', unsafe_allow_html=True)
+                st.markdown(H(f'<div class="order sell"><span class="tag sell">청산</span>'
+                              f'<span>{o}</span></div>'), unsafe_allow_html=True)
             for o in buys:
-                st.markdown(f'<div class="order buy"><span class="tag buy">진입</span>'
-                            f'<span>{o}</span></div>', unsafe_allow_html=True)
+                st.markdown(H(f'<div class="order buy"><span class="tag buy">진입</span>'
+                              f'<span>{o}</span></div>'), unsafe_allow_html=True)
 
         st.divider()
         _tax_section(wdf, today)
@@ -1006,25 +1017,25 @@ def _sidebar(sd, ic, offline):
         st.markdown("### 모드 규칙")
         for k in ['Offense', 'Safe']:
             m = MODE_META[k]; p = PARAMS[k]
-            st.markdown(f"""
+            st.markdown(H(f"""
             <div style="border-left:3px solid {m['color']};padding:8px 0 8px 12px;margin-bottom:10px;">
               <div style="font-weight:700;color:{m['color']};">{m['icon']} {m['ko']} · {m['expo_label']}</div>
               <div style="font-size:.78rem;color:var(--mist);margin-top:2px;">{m['why']}</div>
               <div class="num" style="font-size:.76rem;margin-top:4px;">
                 {base_splits_for(k)}분할 · 익절 +{p['sell']}% · {p['time']}일</div>
-            </div>""", unsafe_allow_html=True)
+            </div>"""), unsafe_allow_html=True)
 
         st.caption(f"비대칭 복리 · {RESET_CYCLE}일 주기 · 이익 {UP_RATE:.0%} / 손실 {DN_RATE:.0%} 반영")
 
         st.divider()
-        st.markdown(f"""
+        st.markdown(H(f"""
         <div class="warn">
           <h4>기대 낙폭 −47%</h4>
           몬테카를로 기준 <b>기대 MDD는 −47%</b>입니다.
           실현 −29%는 상위 5% 행운이었습니다.<br>
           <span class="num">P(&lt;−50%) = 41% · P(&lt;−60%) = 20%</span><br>
           자금관리는 <b>−45~50%</b>를 전제로.
-        </div>""", unsafe_allow_html=True)
+        </div>"""), unsafe_allow_html=True)
 
         st.divider()
         if st.button("데이터 초기화", use_container_width=True):
@@ -1092,14 +1103,14 @@ def _backtest_tab(df, offline):
         m[5].markdown(dial("평균 노출", f"{mt['expo']*100:.0f}%", "나머지는 현금"),
                       unsafe_allow_html=True)
 
-        st.markdown(f"""
+        st.markdown(H(f"""
         <div class="warn">
           <h4>이 MDD는 단일 경로의 값입니다</h4>
           블록 부트스트랩 <span class="num">1,000</span>회 기준 <b>기대 MDD는 −47%</b>이며,
           실현 −29%는 상위 5% 행운이었습니다.
           <span class="num">P(&lt;−40%)=72% · P(&lt;−50%)=41% · P(&lt;−60%)=20%</span>.
           자세한 내용은 <b>전략 로직 → 몬테카를로</b>를 보세요.
-        </div>""", unsafe_allow_html=True)
+        </div>"""), unsafe_allow_html=True)
 
         if mt['include_fees'] or mt['include_tax']:
             t = st.columns(4)
@@ -1194,7 +1205,7 @@ def _strategy_tab():
     cc = st.columns(2)
     for col, k in zip(cc, ['Offense', 'Safe']):
         m = MODE_META[k]; p = PARAMS[k]
-        col.markdown(f"""
+        col.markdown(H(f"""
         <div class="dial" style="border-top:3px solid {m['color']};">
           <div style="font-size:1.15rem;font-weight:800;color:{m['color']};">
             {m['icon']} {m['ko']} <span class="bridge-en">{m['en']}</span></div>
@@ -1216,7 +1227,7 @@ def _strategy_tab():
             <tr><td style="color:var(--mist)">시간 비중</td>
                 <td class="num" style="text-align:right">{'82%' if k=='Offense' else '18%'}</td></tr>
           </table>
-        </div>""", unsafe_allow_html=True)
+        </div>"""), unsafe_allow_html=True)
 
     st.markdown("")
     st.warning("""
