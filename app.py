@@ -39,8 +39,7 @@ import os
 import json
 import re
 import time
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
+import plotly.graph_objects as go
 
 try:
     from github import Github
@@ -743,18 +742,95 @@ def run_backtest(df, start_date, end_date, init_cap,
 
 
 # ============================================================================
-#  차트 — 계기판 톤
+#  차트 (Plotly)
+#    · 한글: 브라우저가 렌더링 → matplotlib 한글 폰트 깨짐 없음
+#    · 호버: 마우스를 올리면 날짜별 수치 표시
+#    · 벤치마크: SOXL 매수후보유를 함께 그린다
 # ============================================================================
-def _style(ax, dark=False):
-    fg = "#8DA0B2" if dark else MIST
-    for sp in ('top', 'right'):
-        ax.spines[sp].set_visible(False)
-    for sp in ('left', 'bottom'):
-        ax.spines[sp].set_color(fg); ax.spines[sp].set_linewidth(0.8)
-    ax.tick_params(colors=fg, labelsize=8.5, length=3)
-    ax.grid(True, ls='-', lw=0.5, alpha=0.15, color=fg)
-    ax.set_axisbelow(True)
-    return ax
+BH_COLOR = "#98A2B0"
+
+def _layout(fig, height=380, legend=True):
+    fig.update_layout(
+        height=height, margin=dict(l=8, r=8, t=8, b=8),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Pretendard, system-ui, sans-serif", size=12, color=MIST),
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor="rgba(255,255,255,.96)", bordercolor="#D9DEE4",
+                        font=dict(family="Pretendard, sans-serif", size=12, color="#0F1B26")),
+        showlegend=legend,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.22,
+                    xanchor="center", x=0.5, font=dict(size=11)),
+        dragmode="pan")
+    fig.update_xaxes(showgrid=False, showline=True, linewidth=1, linecolor="#D9DEE4",
+                     zeroline=False, ticks="outside", tickcolor="#D9DEE4")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(124,143,163,.16)",
+                     zeroline=False, showline=False)
+    return fig
+
+
+def equity_chart(res, bh):
+    """자산 곡선 — 전략 vs SOXL 매수후보유 (로그축)."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=bh.index, y=bh.values, name="SOXL 매수후보유",
+        line=dict(color=BH_COLOR, width=1.4),
+        hovertemplate="SOXL B&H  <b>$%{y:,.0f}</b><extra></extra>"))
+    fig.add_trace(go.Scatter(x=res.index, y=res['Equity'], name="떨사 200",
+        line=dict(color=CRUISE, width=2.1),
+        hovertemplate="떨사 200  <b>$%{y:,.0f}</b><extra></extra>"))
+    fig.update_yaxes(type="log", tickprefix="$", tickformat=",.0f")
+    return _layout(fig, 400)
+
+
+def dd_chart(res, bh):
+    """낙폭 — 전략 vs SOXL B&H. 몬테카를로 기대 MDD(−47%) 기준선."""
+    bdd = (bh - bh.cummax()) / bh.cummax() * 100
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=bdd.index, y=bdd.values, name="SOXL B&H 낙폭",
+        line=dict(color=BH_COLOR, width=1.2),
+        hovertemplate="SOXL B&H  <b>%{y:.1f}%</b><extra></extra>"))
+    fig.add_trace(go.Scatter(x=res.index, y=res['DD'] * 100, name="떨사 200 낙폭",
+        line=dict(color=ALERT, width=1.4), fill="tozeroy",
+        fillcolor="rgba(209,69,59,.16)",
+        hovertemplate="떨사 200  <b>%{y:.1f}%</b><extra></extra>"))
+    fig.add_hline(y=-47, line=dict(color=MIST, width=1, dash="dash"),
+                  annotation_text="몬테카를로 기대 MDD −47%",
+                  annotation_position="bottom left",
+                  annotation_font=dict(size=10, color=MIST))
+    fig.update_yaxes(ticksuffix="%")
+    return _layout(fig, 250)
+
+
+def yearly_chart(yr):
+    """연도별 수익률 막대 + 연중 최대낙폭 선."""
+    years = [str(int(y)) for y in yr.index]
+    rets = (yr['수익률'] * 100).values
+    mdds = (yr['MDD'] * 100).values
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=years, y=rets, name="연간 수익률",
+        marker_color=[CRUISE if r >= 0 else ALERT for r in rets], marker_line_width=0,
+        text=[f"{r:+.0f}%" for r in rets], textposition="outside",
+        textfont=dict(size=10, color=MIST),
+        hovertemplate="수익률  <b>%{y:+.1f}%</b><extra></extra>"))
+    fig.add_trace(go.Scatter(x=years, y=mdds, name="연중 최대낙폭", mode="lines+markers",
+        line=dict(color=RESCUE, width=1.8), marker=dict(size=6),
+        hovertemplate="연중 MDD  <b>%{y:.1f}%</b><extra></extra>"))
+    fig.add_hline(y=0, line=dict(color=MIST, width=1))
+    fig.update_yaxes(ticksuffix="%")
+    fig.update_layout(bargap=.35)
+    return _layout(fig, 360)
+
+
+def live_equity_chart(de, ic):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=de['날짜'], y=de['총자산'], name="총자산",
+        line=dict(color=CRUISE, width=2.1), fill="tozeroy",
+        fillcolor="rgba(14,147,132,.08)",
+        hovertemplate="총자산  <b>$%{y:,.0f}</b><extra></extra>"))
+    fig.add_hline(y=ic, line=dict(color=MIST, width=1, dash="dash"),
+                  annotation_text="시작 원금", annotation_position="top left",
+                  annotation_font=dict(size=10, color=MIST))
+    fig.update_yaxes(tickprefix="$", tickformat=",.0f")
+    return _layout(fig, 320, legend=False)
 
 
 # ============================================================================
@@ -972,18 +1048,8 @@ def main():
             st.write("")
         if not de.empty:
             de['날짜'] = pd.to_datetime(de['날짜']); de = de.sort_values("날짜")
-            fig, ax = plt.subplots(figsize=(11, 3.6))
-            fig.patch.set_alpha(0)
-            ax.patch.set_alpha(0)
-            ax.plot(de['날짜'], de['총자산'], color=CRUISE, lw=1.8)
-            ax.fill_between(de['날짜'], de['총자산'], ic, where=(de['총자산'] >= ic),
-                            color=CRUISE, alpha=.10)
-            ax.fill_between(de['날짜'], de['총자산'], ic, where=(de['총자산'] < ic),
-                            color=ALERT, alpha=.10)
-            ax.axhline(ic, color=MIST, ls='--', lw=.8, alpha=.6)
-            ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
-            _style(ax)
-            st.pyplot(fig)
+            st.plotly_chart(live_equity_chart(de, ic), use_container_width=True,
+                            config={"displayModeBar": False})
 
         with st.expander(f"매매 기록 (전략 시작 {sd} 이후)"):
             dl = st.session_state['action_log']
@@ -1122,34 +1188,36 @@ def _backtest_tab(df, offline):
             t[3].markdown(dial("세후 CAGR", f"{ac*100:.1f}%", f"{(ac-cagr)*100:+.1f}pp"),
                           unsafe_allow_html=True)
 
-        # 차트: 자산 + 낙폭 + 노출
-        fig, (a1, a2) = plt.subplots(2, 1, figsize=(12, 6.2), sharex=True,
-                                     gridspec_kw={'height_ratios': [3, 1.1]})
-        fig.patch.set_alpha(0)
-        for a in (a1, a2):
-            a.patch.set_alpha(0)
-        a1.plot(res.index, res['Equity'], color=CRUISE, lw=1.6)
-        a1.set_yscale('log')
-        a1.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
-        a1.set_ylabel("자산 (로그)", fontsize=9, color=MIST)
-        # 구조 모드 구간 음영 — 고노출 시간대를 시각화
-        sm = (res['Mode'] == 'Safe').values
-        a1.fill_between(res.index, 0, 1, where=sm, transform=a1.get_xaxis_transform(),
-                        color=RESCUE, alpha=.07, lw=0)
-        _style(a1)
-        a2.fill_between(res.index, res['DD'] * 100, 0, color=ALERT, alpha=.25, lw=0)
-        a2.plot(res.index, res['DD'] * 100, color=ALERT, lw=.9)
-        a2.axhline(-47, color=MIST, ls='--', lw=.9)
-        a2.text(res.index[int(len(res)*.01)], -44, "몬테카를로 기대 MDD −47%",
-                fontsize=7.5, color=MIST)
-        a2.set_ylabel("낙폭 %", fontsize=9, color=MIST)
-        a2.set_ylim(min(-60, mdd*100*1.1), 3)
-        _style(a2)
-        plt.tight_layout()
-        st.pyplot(fig)
-        st.caption("앰버 음영 = 구조 모드 구간 (고노출). 점선 = 몬테카를로 기대 낙폭.")
+        # ── SOXL 매수후보유 벤치마크 ──
+        bpx = df['SOXL'].reindex(res.index).ffill()
+        bh = cap * bpx / bpx.iloc[0]
+        b_ret = bh.iloc[-1] / cap - 1
+        b_cagr = (1 + b_ret) ** (365 / days) - 1 if days > 0 else 0
+        b_mdd = ((bh - bh.cummax()) / bh.cummax()).min()
+        b_cal = b_cagr / abs(b_mdd) if b_mdd else 0
 
-        st.markdown("#### 연도별")
+        st.markdown("#### 자산 곡선 · SOXL 매수후보유 대비")
+        b = st.columns(4)
+        b[0].markdown(dial("떨사 200 최종", f"${fin:,.0f}", f"CAGR {cagr*100:.1f}%"),
+                      unsafe_allow_html=True)
+        b[1].markdown(dial("SOXL B&H 최종", f"${bh.iloc[-1]:,.0f}", f"CAGR {b_cagr*100:.1f}%"),
+                      unsafe_allow_html=True)
+        b[2].markdown(dial("낙폭 비교", f"{mdd*100:.1f}%", f"B&H {b_mdd*100:.1f}%"),
+                      unsafe_allow_html=True)
+        b[3].markdown(dial("Calmar 비교", f"{calmar:.2f}", f"B&H {b_cal:.2f}"),
+                      unsafe_allow_html=True)
+        st.write("")
+        st.plotly_chart(equity_chart(res, bh), use_container_width=True,
+                        config={"displayModeBar": False})
+
+        st.markdown("#### 낙폭")
+        st.plotly_chart(dd_chart(res, bh), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.caption("마우스를 올리면 날짜별 수치가 표시됩니다.")
+
+        st.markdown("#### 연도별 성과")
+        st.plotly_chart(yearly_chart(yr), use_container_width=True,
+                        config={"displayModeBar": False})
         y = yr.copy()
         y['수익률'] = y['수익률'].apply(lambda x: f"{x*100:+.1f}%")
         y['MDD']   = y['MDD'].apply(lambda x: f"{x*100:.1f}%")
