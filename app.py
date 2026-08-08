@@ -1122,8 +1122,8 @@ def _backtest_tab(df, offline):
     today = get_now_kst().date()
     c = st.columns([1, 1, 1])
     cap = c[0].number_input("초기 자본 ($)", value=10000.0, step=1000.0)
-    s_d = c[1].date_input("시작", value=datetime(2010, 1, 1), min_value=datetime(2000, 1, 1))
-    e_d = c[2].date_input("종료", value=today, min_value=datetime(2000, 1, 1))
+    s_d = c[1].date_input("시작", value=datetime(2019, 1, 1), min_value=datetime(2010, 1, 1))
+    e_d = c[2].date_input("종료", value=today, min_value=datetime(2010, 1, 1))
 
     with st.expander("비용 · 세금 반영"):
         o = st.columns(2)
